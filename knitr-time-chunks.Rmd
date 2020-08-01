@@ -1,0 +1,187 @@
+---
+title: "knitr-tools Demo"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Code
+
+### Chunk knitting timing
+
+Print timing information for each chunk. This also collects and stores the
+knitting times printed in the final report.
+
+_This is the core of the knitr timing code. It is required by the other pieces._
+
+It contains the following customizable settings:
+
+Setting | Function
+--- | ---
+CHUNK_TIME_CUTOFF | exclude chunks with knitting times longer than this (in minutes)
+knitr::opts_chunk$set(time_it= ) | apply the timing hook to all chunks (TRUE/FALSE)
+
+**TODO: suppress per-chunk printing but still print report**
+
+```{r "knitr chunk timing"}
+# Print run times for all chunks
+
+# Enable timing for all chunks
+knitr::opts_chunk$set(time_it=TRUE)
+
+# Skip chunks faster than this in final report
+CHUNK_TIME_CUTOFF <- 0.01
+
+chunk_times <- list()
+
+# Custom timing chunk hook
+knitr::knit_hooks$set(time_it = local({
+  start_time <- NULL
+  chunk <- NULL
+
+  function(before, options) {
+    if (before) {
+      # record the current time before the chunk
+      start_time <<- Sys.time()
+    } else {
+      # calculate the time difference after the chunk
+      chunk <- options$label
+      chunk_time <- difftime(Sys.time(), start_time, units = "mins")
+
+      chunk_times[chunk] <<- chunk_time
+      print(sprintf("Chunk '%s' took %.2f min", chunk, chunk_time))
+    }
+  }
+}))
+```
+
+### Knitting timing report
+
+Print a report when knitting is complete that shows how long all
+chunks took to knit. This is useful to quickly identify which chunks
+are slowing things down.
+
+_This block can be removed if you don't want to see the report at the end._
+
+It contains the following customizable settings:
+
+Setting | Function
+--- | ---
+CHUNK_NAME_WIDTH | chunk name padding for final report to align times (negative integer)
+
+```{r "print knitr timing report"}
+
+# Hook to print timing report
+local({
+  # Increase this to align the output for longer chunk names
+  CHUNK_NAME_WIDTH=-50
+  
+  # Preserve existing hook
+  old_document_hook <- knitr::knit_hooks$get("document")
+
+  knitr::knit_hooks$set(document = function(x) {
+    print("Chunk knitting time report")
+    print(sprintf("(longer than %.2f min)", CHUNK_TIME_CUTOFF))
+    cat("\n")
+
+    for (chunk in names(chunk_times)) {
+      if (chunk_times[[chunk]] > CHUNK_TIME_CUTOFF) {
+        print(sprintf("Chunk %*s : %5.2f min", CHUNK_NAME_WIDTH, chunk, chunk_times[[chunk]]))
+      }
+    }
+  cat("\n")
+
+  # Run any document hook that was already defined
+  old_document_hook(x)
+  })
+})
+```
+
+### Knitting completion timestamp
+
+Print a timestamp when knitting is complete. 
+
+_This block can be removed if you don't want to see the timestamp at the end._
+
+```{r "print knitr completion timestamp"}
+# Print the time after knitting is complete
+local({
+  # Preserve existing hook
+  old_document_hook <- knitr::knit_hooks$get("document")
+
+  knitr::knit_hooks$set(document = function(x) {
+  cat("\n")
+  print(paste("Knitting completed at", Sys.time()))
+  cat("\n")
+
+  # Run any document hook that was already defined
+  old_document_hook(x)
+  })
+})
+```
+**TODO: Add total runtime**
+
+# Demonstration of the chunk timing output
+### Example output
+
+The following output will appear in the **Rstudio** **R Markdown** window
+
+#### A 3-second dummy chunk
+
+```{r "Dummy Chunk #1 - 3 seconds", echo=FALSE}
+Sys.sleep(3)
+```
+
+
+```
+  |...............................................                       |  67%
+label: Dummy Chunk #1 - 3 seconds
+[1] "Chunk 'Dummy Chunk #1 - 3 seconds' took 0.05 min"
+```
+
+#### A chunk that knits instantly
+
+```{r "Dummy Chunk #2 - 0 seconds", echo=FALSE}
+invisible()
+```
+
+Output:
+
+```
+  |........................................................              |  80%
+label: Dummy Chunk #2 - 0 seconds
+[1] "Chunk 'Dummy Chunk #2 - 0 seconds' took 0.00 min"
+```
+#### A longer-running chunk
+
+```{r "Dummy Chunk #3 - random seconds", echo=FALSE}
+Sys.sleep(runif(1,1,10))
+```
+
+Output:
+
+```
+  |......................................................................| 100%
+label: Dummy Chunk #3 - random seconds
+[1] "Chunk 'Dummy Chunk #3 - random seconds' took 0.15 min"
+```
+
+### The knitting time report
+
+When knitting is complete a report is printed. Only chunks which took longer than
+`r CHUNK_TIME_CUTOFF` minutes will be printed.
+
+```
+[1] "Chunk run time report"
+[1] "(longer than 0 min)"
+
+[1] "Chunk Dummy Chunk #1 - 3 seconds     :  0.05 min"
+[1] "Chunk Dummy Chunk #2 - 0 seconds     :  0.00 min"
+[1] "Chunk Dummy Chunk #3 - random seconds:  0.15 min"
+```
+A timestamp will also be printed upon completion. This is useful if you can't
+remember how long ago you last knitted your document.
+
+```
+[1] "Knitting completed at 2020-07-31 16:26:16"
+```
